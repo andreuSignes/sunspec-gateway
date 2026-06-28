@@ -41,8 +41,12 @@ export interface AppConfig {
  * `@nestjs/config` loader. Reads from `process.env` and applies defaults
  * from design.md §10. Returning the object — not a Promise — is the
  * supported shape for `load: [...]` in `ConfigModule.forRoot()`.
+ *
+ * `KEY` namespaces the returned object under `config.app.*` instead of
+ * the default random UUID, so consumers can read typed config via
+ * `getAppConfig(config)` and `validateConfig` can find the same keys.
  */
-export default (): AppConfig => {
+const configuration = (): AppConfig => {
   const inverterBaseUrl = process.env['INVERTER_BASE_URL'] ?? 'http://192.168.1.50:8484';
   const inverterDeviceId = process.env['INVERTER_DEVICE_ID'] ?? '2';
   const inverterSn = process.env['INVERTER_SN'] ?? '';
@@ -72,61 +76,115 @@ export default (): AppConfig => {
   };
 };
 
+// Namespaces `configuration`'s output under `config.app.*` instead of a
+// random UUID. Without this, `config.get('app.modbusPort')` returns
+// `undefined` — see `node_modules/@nestjs/config/dist/utils/create-config-factory.util.js`.
+(configuration as unknown as { KEY: string }).KEY = 'app';
+
+export default configuration;
+
 /**
  * Validate the loaded config against design.md §10 constraints. Called
  * by `ConfigModule.forRoot({ validate })` at boot — throws a descriptive
  * error before any service starts if a port is out of range or a
  * required field is empty.
+ *
+ * IMPORTANT: `@nestjs/config` calls `validate(config)` BEFORE the
+ * `load:` factories are merged into `ConfigService`, so at this point
+ * the raw config only has `.env` + `process.env` entries (UPPERCASE
+ * keys). We re-apply defaults and read the same keys the loader would
+ * have used. `assignVariablesToProcess` (called by `@nestjs/config`
+ * after validate) also copies the validated values into `process.env`,
+ * so the loader's `process.env['INVERTER_SN']` reads see them.
  */
 export function validateConfig(config: Record<string, unknown>): AppConfig {
-  const app = config as unknown as AppConfig;
+  // Re-apply defaults so a missing env var still validates against the
+  // design.md §10 floor rather than failing the type check.
+  const inverterBaseUrl =
+    strFromEnv(config, 'INVERTER_BASE_URL') ??
+    'http://192.168.1.50:8484';
+  const inverterDeviceId = strFromEnv(config, 'INVERTER_DEVICE_ID') ?? '2';
+  const inverterSn = strFromEnv(config, 'INVERTER_SN', { required: true }) as string;
+  const inverterTimeoutMs =
+    numFromEnv(config, 'INVERTER_TIMEOUT_MS') ?? 4000;
+  const pollIntervalMs = numFromEnv(config, 'POLL_INTERVAL_MS') ?? 5000;
+  const pollTimeoutMs = numFromEnv(config, 'POLL_TIMEOUT_MS') ?? 3000;
+  const modbusHost = strFromEnv(config, 'MODBUS_HOST') ?? '0.0.0.0';
+  const modbusPort = numFromEnv(config, 'MODBUS_PORT') ?? 5020;
+  const modbusUnitId = numFromEnv(config, 'MODBUS_UNIT_ID') ?? 1;
+  const staleAfterMs = numFromEnv(config, 'STALE_AFTER_MS') ?? 30000;
+  const shutdownTimeoutMs = numFromEnv(config, 'SHUTDOWN_TIMEOUT_MS') ?? 5000;
+  const httpPort = numFromEnv(config, 'HTTP_PORT') ?? 3000;
 
-  validatePort('MODBUS_PORT', app.modbusPort);
-  validatePort('MODBUS_UNIT_ID', app.modbusUnitId, 1, 247); // Modbus spec: 1..247
-  validatePort('HTTP_PORT', app.httpPort);
+  validatePort('MODBUS_PORT', modbusPort);
+  validatePort('MODBUS_UNIT_ID', modbusUnitId, 1, 247);
+  validatePort('HTTP_PORT', httpPort);
 
-  if (typeof app.inverterSn === 'string' && app.inverterSn.length === 0) {
+  if (!/^https?:\/\//i.test(inverterBaseUrl)) {
     throw new Error(
-      'INVERTER_SN is required — set it in .env to the inverter serial number (≤ 32 chars).',
-    );
-  }
-
-  if (
-    typeof app.inverterBaseUrl !== 'string' ||
-    !/^https?:\/\//i.test(app.inverterBaseUrl)
-  ) {
-    throw new Error(
-      `INVERTER_BASE_URL must be an http(s) URL (got ${JSON.stringify(app.inverterBaseUrl)}).`,
-    );
-  }
-
-  if (!Number.isInteger(app.inverterTimeoutMs) || app.inverterTimeoutMs <= 0) {
-    throw new Error(
-      `INVERTER_TIMEOUT_MS must be a positive integer (got ${app.inverterTimeoutMs}).`,
-    );
-  }
-  if (!Number.isInteger(app.pollIntervalMs) || app.pollIntervalMs <= 0) {
-    throw new Error(
-      `POLL_INTERVAL_MS must be a positive integer (got ${app.pollIntervalMs}).`,
-    );
-  }
-  if (!Number.isInteger(app.pollTimeoutMs) || app.pollTimeoutMs <= 0) {
-    throw new Error(
-      `POLL_TIMEOUT_MS must be a positive integer (got ${app.pollTimeoutMs}).`,
-    );
-  }
-  if (!Number.isInteger(app.staleAfterMs) || app.staleAfterMs <= 0) {
-    throw new Error(
-      `STALE_AFTER_MS must be a positive integer (got ${app.staleAfterMs}).`,
-    );
-  }
-  if (!Number.isInteger(app.shutdownTimeoutMs) || app.shutdownTimeoutMs <= 0) {
-    throw new Error(
-      `SHUTDOWN_TIMEOUT_MS must be a positive integer (got ${app.shutdownTimeoutMs}).`,
+      `INVERTER_BASE_URL must be an http(s) URL (got ${JSON.stringify(inverterBaseUrl)}).`,
     );
   }
 
-  return app;
+  for (const [key, value] of [
+    ['INVERTER_TIMEOUT_MS', inverterTimeoutMs],
+    ['POLL_INTERVAL_MS', pollIntervalMs],
+    ['POLL_TIMEOUT_MS', pollTimeoutMs],
+    ['STALE_AFTER_MS', staleAfterMs],
+    ['SHUTDOWN_TIMEOUT_MS', shutdownTimeoutMs],
+  ] as const) {
+    if (value <= 0) {
+      throw new Error(`${key} must be a positive integer (got ${value}).`);
+    }
+  }
+
+  return {
+    inverterBaseUrl,
+    inverterDeviceId,
+    inverterSn,
+    inverterTimeoutMs,
+    pollIntervalMs,
+    pollTimeoutMs,
+    modbusHost,
+    modbusPort,
+    modbusUnitId,
+    staleAfterMs,
+    shutdownTimeoutMs,
+    httpPort,
+  };
+}
+
+/** Read a UPPERCASE env-var key from `config` (the raw `@nestjs/config` record). */
+function strFromEnv(
+  config: Record<string, unknown>,
+  key: string,
+  opts: { required?: boolean } = {},
+): string | undefined {
+  const v = config[key];
+  if (typeof v === 'string') {
+    if (opts.required && v.length === 0) {
+      throw new Error(`${key} is required — set it in .env.`);
+    }
+    return v;
+  }
+  if (opts.required) {
+    throw new Error(`${key} is required (got ${JSON.stringify(v)}).`);
+  }
+  return undefined;
+}
+
+/** Read a UPPERCASE env-var key from `config` as integer. */
+function numFromEnv(
+  config: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const v = config[key];
+  if (typeof v === 'number') return Number.isInteger(v) ? v : undefined;
+  if (typeof v === 'string' && v.length > 0) {
+    const n = Number.parseInt(v, 10);
+    return Number.isInteger(n) ? n : undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -155,10 +213,22 @@ function toInt(raw: string | undefined, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** Typed accessor — returns `config.get<AppConfig>(...)` with the right key shape. */
+/** Typed accessor — reads each key from `ConfigService` under `app.*`. */
 export function getAppConfig(config: ConfigService): AppConfig {
-  // ConfigService.get<T> with a non-literal key returns `T | undefined`;
-  // `validateConfig` guarantees the keys exist at boot, so a non-null
-  // assertion is safe here.
-  return config.get('appConfig') as unknown as AppConfig;
+  // `validateConfig` already guarantees each key is present and the right
+  // shape at boot, so a non-null assertion is safe here.
+  return {
+    inverterBaseUrl: config.get<string>('app.inverterBaseUrl') as string,
+    inverterDeviceId: config.get<string>('app.inverterDeviceId') as string,
+    inverterSn: config.get<string>('app.inverterSn') as string,
+    inverterTimeoutMs: config.get<number>('app.inverterTimeoutMs') as number,
+    pollIntervalMs: config.get<number>('app.pollIntervalMs') as number,
+    pollTimeoutMs: config.get<number>('app.pollTimeoutMs') as number,
+    modbusHost: config.get<string>('app.modbusHost') as string,
+    modbusPort: config.get<number>('app.modbusPort') as number,
+    modbusUnitId: config.get<number>('app.modbusUnitId') as number,
+    staleAfterMs: config.get<number>('app.staleAfterMs') as number,
+    shutdownTimeoutMs: config.get<number>('app.shutdownTimeoutMs') as number,
+    httpPort: config.get<number>('app.httpPort') as number,
+  };
 }
