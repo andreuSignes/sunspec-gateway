@@ -5,6 +5,13 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -12,17 +19,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Read Node version from .npmrc
+        id: node
+        run: echo "version=$(grep -E '^node-version=' .npmrc | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ steps.node.outputs.version }}
           cache: 'pnpm'
 
-      - name: Enable pnpm via corepack
-        run: corepack enable pnpm
-
       - name: Setup pnpm
-        run: pnpm --version  # corepack picks up version from packageManager field
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
