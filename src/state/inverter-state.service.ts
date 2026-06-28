@@ -13,27 +13,32 @@ export class InverterStateService {
   setState(next: InverterState): void {
     this.current = next;
     if (!next.isStale) this.lastGood = next;
+  }
 
-    // Promote to offline if upstream hasn't reported in too long.
+  /**
+   * Returns the latest state, or an offline-promoted snapshot when the
+   * last fresh publish is older than STALE_AFTER_MS. Identity fields
+   * (serialNumber, totalEnergyKwh) and lastGood data are preserved.
+   */
+  getState(): InverterState {
+    if (!this.current) return this.emptyState();
+
     if (
-      this.lastGood &&
-      Date.now() - this.lastGood.lastUpdated.getTime() >
-        InverterStateService.STALE_AFTER_MS
+      Date.now() - this.current.lastUpdated.getTime() >
+      InverterStateService.STALE_AFTER_MS
     ) {
+      const stale = this.lastGood ?? this.current;
       this.logger.warn('No fresh data — marking state offline');
-      this.current = {
-        ...this.lastGood,
+      return {
+        ...stale,
         acPowerWatts: 0,
         acCurrent: 0,
         status: 'offline',
         isStale: true,
-        lastUpdated: new Date(),
+        lastUpdated: this.current.lastUpdated,
       };
     }
-  }
 
-  getState(): InverterState {
-    if (!this.current) return this.emptyState();
     return this.current;
   }
 
