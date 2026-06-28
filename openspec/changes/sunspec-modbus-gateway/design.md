@@ -473,6 +473,25 @@ test/
 
 ## 13. Dependencies (pinned)
 
+**Package manager**: `pnpm@11.0.0` (pinned in `package.json` via the
+`packageManager` field; enforced by `corepack`). Rationale:
+- Deterministic installs via `pnpm-lock.yaml` (no `package-lock.json`
+  coexistence).
+- Faster CI cache hits — `actions/setup-node` `cache: pnpm` warms
+  the pnpm store directly.
+- Stricter peer-dep resolution surfaces mismatch bugs that npm's
+  permissive install masks.
+
+**`.npmrc` flags**:
+- `shamefully-hoist=true` — required because NestJS packages transitively
+  import hoisted deps that pnpm's default isolated layout breaks.
+- `strict-peer-dependencies=false` — pnpm's default is too strict for
+  NestJS's loose peer declarations.
+- `auto-install-peers=true` — peers are installed automatically instead
+  of failing the install.
+- `optional=false` — skips `modbus-serial`'s optional `serialport@13`
+  native build; TCP-only path is sufficient.
+
 **Production** (added to `package.json`):
 - `@nestjs/common` `^11.x`
 - `@nestjs/core` `^11.x`
@@ -489,6 +508,8 @@ test/
 - `ts-node` `^10.x`
 - `@types/node` `^20.x`
 - `jest` `^29.x`, `ts-jest` `^29.x`, `@types/jest` `^29.x`
+- `eslint` `^9.x`, `@eslint/js` `^9.x`, `typescript-eslint` `^8.x`
+  (ESLint flat config + TS preset)
 - `nock` `^14.x`
 - `supertest` `^7.x`
 
@@ -496,6 +517,27 @@ test/
 - `pymodbus` `^3.x` — runs only in `sdd-verify`, never in CI unit pipeline.
 
 Install `modbus-serial` with `--no-optional` to skip the `serialport@13` native build (TCP-only path is sufficient). Document this in the README so contributors don't fight the postinstall on Mac/Linux.
+
+### 14.5 CI/CD — GitHub Actions
+
+CI runs on every PR and on every push to `main` (`.github/workflows/ci.yml`):
+
+| Step | Tool | Purpose |
+|------|------|---------|
+| checkout | `actions/checkout@v4` | shallow clone |
+| setup-node | `actions/setup-node@v4` with `node-version: 20`, `cache: pnpm` | warm pnpm store |
+| corepack | `corepack enable pnpm` | activate pnpm from `packageManager` field |
+| install | `pnpm install --frozen-lockfile` | deterministic dep resolution |
+| lint | `pnpm lint` | ESLint v9 flat config |
+| build | `pnpm build` | TypeScript strict compile |
+| test | `pnpm test -- --coverage` | Jest unit + integration |
+
+`runs-on: ubuntu-latest`, `timeout-minutes: 10`. The pnpm version is
+not hard-coded in the workflow — `corepack` reads the `packageManager`
+field from `package.json`, so a single bump there propagates everywhere.
+
+**Node version requirement**: `engines.node: ">=20"` (declared in
+`package.json`). LTS 20 is the floor; 22/24 also work for local dev.
 
 ## 14. Forecasted line count
 
@@ -521,14 +563,31 @@ This is **above the D1 400-line review budget**. Per preflight `C1` (ask on risk
 
 ## 15. Review budget decision (BLOCKER)
 
-Forecasted `~1020 LOC` (effective code ~870) exceeds the 400-line D1 budget. Recommend the orchestrator ask the user which delivery strategy to adopt before chaining into `sdd-tasks`:
+Forecasted `~1020 LOC` (effective code ~870) exceeds the 400-line D1 budget. The user pre-approved chained PRs (preflight C1 = `ask-on-risk`, already triggered) and chose chained-PRs over `size:exception` because each slice has an autonomous verification gate and a clean rollback boundary.
 
-- **(a) Accept `size:exception`** — ship the entire change as one PR with the full file tree. Pros: simpler history, atomic review of the Adapter → StateBus → ModbusServer contract. Cons: ~2.5× the review budget; reviewer fatigue; harder to bisect on regression.
-- **(b) Chained PRs** (recommended by `chained-pr` skill). Each slice autonomous and independently revertible:
-  - **PR1 — Domain + Adapter interface + State bus + Scale factor helpers + Unit tests** (~270 LOC). Verifies the typed contract end-to-end with a `FakeAdapter` and pure helpers. Tests run with zero external dependencies. Establishes the InverterState type and bus atomic-swap pattern.
-  - **PR2 — Modbus server + Register constants + E2E test** (~400 LOC). Depends on PR1. Verifies the wire format and double-buffer against `pymodbus`. No live inverter needed.
-  - **PR3 — Solplanet adapter + Polling cron + Module wiring + Config + README** (~350 LOC). Depends on PR1. Plugs the real HTTP transport into the bus. Verifies against the real inverter manually.
+**Delivery flow: GitHub Flow.** Each PR targets `main` directly (no
+parent chain, no tracker branch). PR2 and PR3 are developed in parallel
+off `main` after PR1 merges; both depend on PR1's foundation being in
+`main`, but neither depends on the other.
 
-The chained-PR split is preferred because each slice has autonomous scope, a clear verification gate, and a clean rollback boundary. `chained-pr` and `work-unit-commits` skills already encode the commit-per-PR discipline this requires.
+**Branch graph (three PRs against `main`):**
 
-**Recommendation to orchestrator: stop here and ask the user before chaining into `sdd-tasks`.**
+```
+main ◄── pr1/domain-state-scalefactor   (PR1 — foundation: types, bus, scale-factor, pnpm, ESLint, CI)
+main ◄── feat/modbus-server-registers   (PR2 — Modbus wire + e2e, branches off main after PR1 merges)
+main ◄── feat/solplanet-adapter-module  (PR3 — HTTP adapter + wiring + README, branches off main after PR1 merges)
+```
+
+**Branch naming**: `feat/<scope>` for feature PRs (GitHub Flow
+convention). The PR1 branch keeps its `pr1/...` name because the PR is
+already open at the time of writing — renaming would invalidate the
+PR URL. PR2 and PR3 use the `feat/` prefix.
+
+**Per-PR slices** (autonomous scope, clear verification gate, clean
+rollback boundary):
+- **PR1 — Domain + Adapter interface + State bus + Scale-factor helpers + Unit tests + pnpm + ESLint + CI** (~350 LOC). Verifies the typed contract end-to-end with a `FakeAdapter` and pure helpers. Tests run with zero external dependencies. Establishes the InverterState type and bus atomic-swap pattern. Adds the pnpm migration, ESLint v9 flat config, and GitHub Actions CI workflow.
+- **PR2 — Modbus server + Register constants + E2E test** (~400 LOC). Branches off `main` after PR1 merges. Verifies the wire format and double-buffer against `pymodbus`. No live inverter needed.
+- **PR3 — Solplanet adapter + Polling cron + Module wiring + Config + README** (~350 LOC). Branches off `main` after PR1 merges. Independent of PR2. Plugs the real HTTP transport into the bus. Verifies against the real inverter manually.
+
+`work-unit-commits` skill encodes the commit-per-PR discipline this
+requires. The `chained-pr` skill is NOT used — GitHub Flow replaces it.

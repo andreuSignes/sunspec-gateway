@@ -8,23 +8,30 @@
 
 The design forecast ~1020 LOC of code + tests + docs, which is ~2.5× the
 D1 400-line per-PR review budget. The user pre-approved chained PRs
-(preflight C1 = `ask-on-risk`, already triggered) and chose
-`feature-branch-chain` over `size:exception` because each slice has an
-autonomous verification gate and a clean rollback boundary.
+(preflight C1 = `ask-on-risk`, already triggered) and chose chained-PRs
+over `size:exception` because each slice has an autonomous verification
+gate and a clean rollback boundary.
 
-**Chain strategy: `feature-branch-chain`.** Each PR targets the immediate
-parent branch (not `main`) so each child diff stays focused on a single
-work unit. Only the tracker (PR1's branch, retargeted at the end of the
-chain) ultimately merges to `main`.
+**Delivery model: GitHub Flow.** Each PR targets `main` directly (no
+parent chain). Every branch is short-lived and merges independently.
+This keeps review focus tight and makes every PR individually revertible
+without unwinding a chain.
 
-**Branch graph (PR1 → PR2 → PR3):**
+**Branch graph (three parallel PRs against `main`):**
 
 ```
-main
- └─► pr1/domain-state-scalefactor     (tracker, merges to main at end)
-      └─► pr2/modbus-server-registers  (merges into tracker branch)
-           └─► pr3/solplanet-adapter-module  (merges into PR2 branch)
+main ◄── pr1/domain-state-scalefactor   (this PR — foundation)
+main ◄── feat/modbus-server-registers   (PR2 — Modbus wire + e2e)
+main ◄── feat/solplanet-adapter-module  (PR3 — HTTP adapter + wiring + README)
 ```
+
+PR2 and PR3 each depend on PR1 having landed in `main`. They are
+developed in parallel off `main` after PR1 merges — no chain branches,
+no tracker branch.
+
+**Branch naming**: `feat/<scope>` for feature PRs (GitHub Flow
+convention). The PR1 branch keeps its `pr1/...` name because the PR is
+already open — renaming would invalidate the PR URL.
 
 **Per-PR discipline:** each PR is independently mergeable, each carries
 its own verification gate, and each task is one commit (work-unit-commits:
@@ -39,13 +46,13 @@ they verify").
 | 400-line budget risk | High |
 | Chained PRs recommended | Yes |
 | Delivery strategy | ask-on-risk (already triggered, user approved chained) |
-| Chain strategy | feature-branch-chain |
+| Flow model | GitHub Flow (each PR targets `main`) |
 | Decision needed before apply | No (locked at preflight) |
 
 ```text
 Decision needed before apply: No
 Chained PRs recommended: Yes
-Chain strategy: feature-branch-chain
+Flow model: GitHub Flow (each PR targets main)
 400-line budget risk: High
 ```
 
@@ -134,26 +141,69 @@ Chain strategy: feature-branch-chain
 **Commit**: `test(state): cover InverterStateService stale detection`.
 
 ### 1.8 PR1 verification
-- [ ] 1.10 Run `npm install --no-optional` (serialport skipped) and
-  `npm test`. All green. No live inverter. No Modbus server bound.
+- [ ] 1.10 Run `pnpm install --frozen-lockfile` (serialport skipped via
+  `--no-optional` or `.npmrc` `optional=false`) and `pnpm test`. All
+  green. No live inverter. No Modbus server bound.
+
+### 1.9 Migrate to pnpm 11
+- [ ] 1.11 Add `"packageManager": "pnpm@11.0.0"` to `package.json`.
+- [ ] 1.12 Delete `package-lock.json`.
+- [ ] 1.13 Replace `.npmrc` with `shamefully-hoist=true`,
+  `strict-peer-dependencies=false`, `auto-install-peers=true`.
+  `shamefully-hoist=true` is required because NestJS packages transitively
+  pull hoisted deps that pnpm's default isolated layout breaks.
+- [ ] 1.14 Run `pnpm install` to regenerate `pnpm-lock.yaml`.
+- [ ] 1.15 Update npm scripts: `test`, `test:watch`, `build`,
+  `start:dev` already use the right CLI invocations — keep as-is; pnpm
+  runs them transparently.
+
+**Commit**: `chore(deps): migrate to pnpm 11 (packageManager field, .npmrc, pnpm-lock.yaml)`.
+
+### 1.10 Add ESLint v9 flat config
+- [ ] 1.16 Add `eslint.config.js` with `@eslint/js` recommended +
+  `typescript-eslint` recommended; ignores `dist/`, `coverage/`,
+  `node_modules/`; rule overrides: `no-unused-vars` (argsIgnorePattern:
+  `^_`), `explicit-function-return-type: off`, `no-explicit-any: warn`.
+- [ ] 1.17 Add dev deps: `eslint`, `@eslint/js`, `typescript-eslint`.
+- [ ] 1.18 Add `lint` script: `"lint": "eslint ."`.
+- [ ] 1.19 Run `pnpm lint` — fix any issues that surface.
+
+**Commit**: `chore(lint): add ESLint v9 flat config with typescript-eslint`.
+
+### 1.11 Add GitHub Actions CI
+- [ ] 1.20 Add `.github/workflows/ci.yml` triggered on `pull_request` and
+  `push` to `main`. Steps: checkout, setup-node@20 with `cache: pnpm`,
+  `corepack enable pnpm`, install via `pnpm install --frozen-lockfile`,
+  `pnpm lint`, `pnpm build`, `pnpm test -- --coverage`. `runs-on:
+  ubuntu-latest`, `timeout-minutes: 10`.
+- [ ] 1.21 Confirm the CI workflow runs green on this PR (Actions tab).
+
+**Commit**: `ci: add GitHub Actions workflow (lint + build + test on PRs)`.
+
+### 1.12 PR1 verification gate (updated)
+- [ ] 1.22 Run `pnpm install --frozen-lockfile && pnpm lint && pnpm test`.
+  All green. No live inverter. No Modbus server bound. CI mirrors this
+  command via `.github/workflows/ci.yml`.
 
 **PR1 docs**: README is NOT in PR1 (lands in PR3). PR body should describe
-what landed: types, bus, scale-factor, unit tests, and explicitly call
-out that no transport or protocol surface is in this PR.
+what landed: types, bus, scale-factor, unit tests, pnpm migration, ESLint
+flat config, GitHub Actions CI, and explicitly call out that no
+transport or protocol surface is in this PR.
 
-**PR1 verification gate**: `npm test` passes. CI gate is unit tests only.
+**PR1 verification gate**: `pnpm lint && pnpm build && pnpm test` all
+pass. CI runs on every PR via `.github/workflows/ci.yml`.
 
 ---
 
 ## PR2 — Modbus server, register constants, e2e test
 
-**Branch**: `pr2/modbus-server-registers` ← branches from
-`pr1/domain-state-scalefactor` after PR1 merges
+**Branch**: `feat/modbus-server-registers` ← branches from `main`
+after PR1 merges
 **Estimated LOC**: ~400 (5 tasks, 5 commits)
 **Independently mergeable**: yes — uses a `FakeAdapter` to drive the bus;
 no HTTP, no real inverter.
-**Verification gate**: `npm run test:e2e` passes against the running
-Modbus server. Adapter is stubbed.
+**Verification gate**: `pnpm test` (unit + e2e) passes against the
+running Modbus server. Adapter is stubbed.
 
 > **Address convention note (verify against obs 575 before coding)**:
 > HA reads `40000–40001` for the SunS magic, `40002–40003` for M1 ID/L,
@@ -219,7 +269,7 @@ Modbus server. Adapter is stubbed.
 **Commit**: `test(modbus): add e2e test against running SunSpecModbusServer`.
 
 ### 2.4 PR2 verification
-- [ ] 2.10 Run `npm run test:e2e`. All green. No real inverter needed
+- [ ] 2.10 Run `pnpm test:e2e`. All green. No real inverter needed
   (FakeAdapter injects the state). Server binds to localhost:5020 for
   the duration of the test only.
 
@@ -234,14 +284,14 @@ running Modbus server. Adapter is stubbed.
 
 ## PR3 — Solplanet adapter, polling, module wiring, config, README
 
-**Branch**: `pr3/solplanet-adapter-module` ← branches from
-`pr2/modbus-server-registers` after PR2 merges
+**Branch**: `feat/solplanet-adapter-module` ← branches from `main`
+after PR1 merges (independent of PR2)
 **Estimated LOC**: ~350 (9 tasks, 9 commits)
 **Independently mergeable**: yes — full app boots, `/healthz` returns
 200, cron is scheduled. Real inverter behavior is verified manually by
 the user, NOT a CI gate.
-**Verification gate**: `npm run build` succeeds; `npm run start:dev`
-boots the app; `GET /healthz` returns `{ status: 'ok' }` with HTTP 200;
+**Verification gate**: `pnpm build` succeeds; `pnpm start:dev` boots
+the app; `GET /healthz` returns `{ status: 'ok' }` with HTTP 200;
 polling cron logs at debug level every 5 s when an inverter is
 reachable.
 
@@ -320,9 +370,9 @@ reachable.
   `STALE_AFTER_MS`, `SHUTDOWN_TIMEOUT_MS`, `HTTP_PORT`). Inline comment
   next to `MODBUS_HOST`: **must be a private interface in production**.
 - [ ] 3.12 Add `README.md` covering: what the gateway is (1 paragraph
-  + diagram), installation (`npm install --no-optional`), configuration
-  (every `.env` key + private-interface warning), running
-  (`npm run start:dev`), how to verify with `pymodbus` (Python venv
+  + diagram), installation (`pnpm install --frozen-lockfile`),
+  configuration (every `.env` key + private-interface warning), running
+  (`pnpm start:dev`), how to verify with `pymodbus` (Python venv
   snippet from design.md §11), Home Assistant integration example
   with the **corrected** register addresses (`40002–40069` for M1,
   `40070–40121` for M101, SunS magic at `40000–40001`).
@@ -330,8 +380,8 @@ reachable.
 **Commit**: `docs: add README and .env.example with security note`.
 
 ### 3.8 PR3 verification
-- [ ] 3.13 Run `npm run build` — TypeScript compiles clean.
-- [ ] 3.14 Run `npm run start:dev` — service starts, `/healthz`
+- [ ] 3.13 Run `pnpm build` — TypeScript compiles clean.
+- [ ] 3.14 Run `pnpm start:dev` — service starts, `/healthz`
   returns 200, polling cron fires every 5 s at debug level
   (no real inverter means the adapter returns an offline state and
   the cron logs the warning). No real-inverter test required for CI.
@@ -347,30 +397,32 @@ user (NOT a CI gate).
 
 ## Merge sequence
 
+GitHub Flow: every PR targets `main` directly. No parent chain.
+
 1. Open **PR1** (`pr1/domain-state-scalefactor` → `main`). Review and
-   merge to `main`. Tracker branch is now in `main`.
-2. Create `pr2/modbus-server-registers` from
-   `pr1/domain-state-scalefactor`. Open **PR2**
-   (`pr2/modbus-server-registers` → `pr1/domain-state-scalefactor`).
-   Review and merge. PR1 branch now contains PR1 + PR2.
-3. Create `pr3/solplanet-adapter-module` from
-   `pr2/modbus-server-registers`. Open **PR3**
-   (`pr3/solplanet-adapter-module` → `pr2/modbus-server-registers`).
-   Review and merge. PR2 branch now contains PR1 + PR2 + PR3.
-4. Retarget PR1 (the tracker) to `main` — its branch now contains the
-   full chain. Open the final PR (`pr1/domain-state-scalefactor` →
-   `main`) or fast-forward `main` to the tracker HEAD per the
-   `chained-pr` skill's tracker pattern. **Only this final merge lands
-   on `main`.**
+   merge to `main`. Foundation is now in `main`.
+2. Branch `feat/modbus-server-registers` off `main`. Open **PR2**
+   (`feat/modbus-server-registers` → `main`). Review and merge.
+3. Branch `feat/solplanet-adapter-module` off `main`. Open **PR3**
+   (`feat/solplanet-adapter-module` → `main`). Review and merge.
+
+PR2 and PR3 are developed in parallel after PR1 lands; both depend on
+PR1's `InverterState`, `InverterStateService`, `InverterAdapter`, and
+scale-factor helpers being in `main`. They do NOT depend on each other.
 
 ## Workload summary
 
 | PR | Tasks | Commits | Est LOC | Est review time |
 |----|-------|---------|---------|------------------|
-| PR1 | 8 | 8 | ~270 | 15–20 min |
+| PR1 | 12 | 12 | ~350 | 15–20 min |
 | PR2 | 5 | 5 | ~400 | 20–25 min |
 | PR3 | 9 | 9 | ~350 | 20–25 min |
-| **Total** | **22** | **22** | **~1020** | **55–70 min** |
+| **Total** | **26** | **26** | **~1100** | **55–70 min** |
+
+PR1 grew from 8→12 tasks because of the pnpm migration, ESLint setup,
+and GitHub Actions CI. The added tasks (~80 LOC of config + workflow)
+are infrastructure, not domain code, and stay under the per-PR review
+budget when measured as code-only changes.
 
 ## Out of scope (deferred follow-up changes)
 
