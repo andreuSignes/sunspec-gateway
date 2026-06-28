@@ -257,24 +257,25 @@ export const M101 = {
   WH_HI: 94,        // +24 hi word of acc32 (lifetime energy)
   WH_LO: 95,        // +25 lo word
   WH_SF: 96,        // +26
-  DCW: 99,          // +31 DC power
   DCA: 97,          // +27 DC current
   DCA_SF: 98,       // +28
-  DCV: 100,         // +30 DC voltage (corrected — was 99 in v1 of this doc)
-  DCV_SF: 101,      // +31 (corrected — was 99)
-  TMPCAB: 101,      // +33 cabinet temp
-  TMPSNK: 102,      // +34
-  TMPTRNS: 103,     // +35
-  TMPOT: 104,       // +36
-  TMP_SF: 105,      // +37
-  ST: 106,          // +38 operating state
-  STVND: 107,       // +39
-  EVT1: 108,        // +40 vendor event bitfield (bitfield32, 2 regs)
-  EVT2: 110,        // +42
-  EVT_VND1: 112,    // +44
-  EVT_VND2: 114,    // +46
-  EVT_VND3: 116,    // +48
-  EVT_VND4: 118,    // +50
+  DCV: 99,          // +29 DC voltage
+  DCV_SF: 100,      // +30
+  DCW: 101,         // +31 DC power
+  DCW_SF: 102,      // +32
+  TMPCAB: 103,      // +33 cabinet temp
+  TMPSNK: 104,      // +34
+  TMPTRNS: 105,     // +35
+  TMPOT: 106,       // +36
+  TMP_SF: 107,      // +37
+  ST: 108,          // +38 operating state
+  STVND: 109,       // +39
+  EVT1: 110,        // +40 vendor event bitfield (bitfield32, 2 regs)
+  EVT2: 112,        // +42
+  EVT_VND1: 114,    // +44
+  EVT_VND2: 116,    // +46
+  EVT_VND3: 118,    // +48
+  EVT_VND4: 120,    // +50
   LENGTH: 52,
 } as const;
 
