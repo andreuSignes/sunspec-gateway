@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InverterState } from '../domain/inverter-state';
+import { InverterState, M101_ST } from './inverter-state.types';
 
 @Injectable()
 export class InverterStateService {
@@ -10,36 +10,57 @@ export class InverterStateService {
   /** Threshold beyond which the current state is treated as stale. */
   static readonly STALE_AFTER_MS = 30_000;
 
-  setState(next: InverterState): void {
-    this.current = next;
-    if (!next.isStale) this.lastGood = next;
+  /**
+   * Publish a new state from the adapter.
+   *
+   * The bus owns `lastUpdatedAt`: a fresh publish stamps `Date.now()`;
+   * an `isStale` publish preserves the previous `lastUpdatedAt` so the
+   * time-based stale threshold trips correctly. The adapter's
+   * `lastUpdatedAt` value is ignored — the adapter may pass any sentinel
+   * (typically `0`) and the bus will overwrite it.
+   *
+   * `lastGood` is only updated on fresh (non-stale) publishes so a
+   * failed poll doesn't wipe the last-known-good snapshot.
+   */
+  publish(state: InverterState): void {
+    if (state.isStale) {
+      const prevTimestamp = this.current?.lastUpdatedAt ?? 0;
+      this.current = { ...state, lastUpdatedAt: prevTimestamp };
+    } else {
+      const withTimestamp: InverterState = { ...state, lastUpdatedAt: Date.now() };
+      this.current = withTimestamp;
+      this.lastGood = withTimestamp;
+    }
   }
 
   /**
-   * Returns the latest state, or an offline-promoted snapshot when the
-   * last fresh publish is older than STALE_AFTER_MS. Identity fields
-   * (serialNumber, totalEnergyKwh) and lastGood data are preserved.
+   * Returns the latest state. When the last fresh publish is older than
+   * STALE_AFTER_MS, the snapshot has all production fields zeroed,
+   * `operatingState = OFF`, `isStale = true`, and `lastUpdatedAt`
+   * stamped to now. Identity fields (`vendorName`, `modelName`,
+   * `serialNumber`) and `lifetimeEnergyKwh` are preserved from the
+   * last good publish.
    */
-  getState(): InverterState {
+  snapshot(): InverterState {
     if (!this.current) return this.emptyState();
 
-    if (
-      Date.now() - this.current.lastUpdated.getTime() >
-      InverterStateService.STALE_AFTER_MS
-    ) {
-      const stale = this.lastGood ?? this.current;
-      this.logger.warn('No fresh data — marking state offline');
-      return {
-        ...stale,
-        acPowerWatts: 0,
-        acCurrent: 0,
-        status: 'offline',
-        isStale: true,
-        lastUpdated: this.current.lastUpdated,
-      };
+    const ageMs = Date.now() - this.current.lastUpdatedAt;
+    if (ageMs < InverterStateService.STALE_AFTER_MS) {
+      return this.current;
     }
 
-    return this.current;
+    const base = this.lastGood ?? this.current;
+    this.logger.warn('No fresh data — marking state stale');
+    return {
+      ...base,
+      acPowerWatts: 0,
+      acVoltageVolts: 0,
+      acCurrentAmps: 0,
+      gridFrequencyHz: 0,
+      operatingState: M101_ST.OFF,
+      isStale: true,
+      lastUpdatedAt: Date.now(),
+    };
   }
 
   getLastGood(): InverterState | null {
@@ -48,15 +69,17 @@ export class InverterStateService {
 
   private emptyState(): InverterState {
     return {
-      serialNumber: 'UNKNOWN',
       acPowerWatts: 0,
-      acVoltage: 0,
-      acCurrent: 0,
-      acFrequency: 0,
-      totalEnergyKwh: 0,
-      status: 'offline',
-      lastUpdated: new Date(),
+      acVoltageVolts: 0,
+      acCurrentAmps: 0,
+      gridFrequencyHz: 0,
+      lifetimeEnergyKwh: 0,
+      operatingState: M101_ST.OFF,
+      vendorName: 'UNKNOWN',
+      modelName: 'UNKNOWN',
+      serialNumber: 'UNKNOWN',
       isStale: true,
+      lastUpdatedAt: 0,
     };
   }
 }
