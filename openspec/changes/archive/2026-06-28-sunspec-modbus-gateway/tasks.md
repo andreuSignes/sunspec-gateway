@@ -3,6 +3,18 @@
 > **Phase**: sdd-tasks
 > **Change**: `sunspec-modbus-gateway`
 > **Inputs**: `proposal.md` (obs `578`), 9 spec files (obs `579`), `design.md` (obs `a7328f3f154d4647`), canonical SunSpec register map (obs `575`), exploration (obs `577`), init state (obs `576`).
+>
+> **Archive reconciliation (2026-06-28)**: PR1 and PR2 task checkboxes were
+> stale at archive time (the original `tasks.md` was committed in
+> `4800015` before PR1 and PR2 landed). PR1 merged via `ae11503` and
+> PR2 via `0b6db62`; both are present in the final `main` HEAD
+> (`0f16b81`) alongside PR3 (`484458e`) and PR4 (`0f16b81`). The
+> `verify` phase returned PASSED with all 6 hard gates green (82 unit
+> + 12 e2e tests, Docker build, SunSpec register map verified
+> byte-for-byte against github.com/sunspec/models canonical JSON).
+> Per the sdd-archive skill's exception clause, all PR1 and PR2
+> checkboxes are now marked complete so the archived audit trail
+> reflects reality. Reconciliation proof: git log of `main` HEAD.
 
 ## Preamble — chain strategy and review budget
 
@@ -64,34 +76,34 @@ Flow model: GitHub Flow (each PR targets main)
 **Verification gate**: `npm test` passes with zero external dependencies.
 
 ### 1.1 Scaffold project tooling
-- [ ] 1.1 Create `package.json` with production deps (`@nestjs/common`,
+- [x] 1.1 Create `package.json` with production deps (`@nestjs/common`,
   `@nestjs/core`, `@nestjs/config`, `@nestjs/axios`, `@nestjs/schedule`,
   `axios`, `modbus-serial@8.0.25` (pinned), `reflect-metadata`, `rxjs`),
   dev deps (`typescript`, `ts-node`, `@types/node@20`, `jest`, `ts-jest`,
   `@types/jest`, `@nestjs/testing`, `supertest`, `nock`), and
   `engines.node: ">=20"`.
-- [ ] 1.2 Add `.npmrc` with `optional=false` so `modbus-serial`'s
+- [x] 1.2 Add `.npmrc` with `optional=false` so `modbus-serial`'s
   `serialport@13` native build is skipped — TCP-only path is sufficient.
-- [ ] 1.3 Add `jest.config.ts` (unit only — e2e config lands in PR2) and
+- [x] 1.3 Add `jest.config.ts` (unit only — e2e config lands in PR2) and
   `tsconfig.json` with `strict: true`, `experimentalDecorators: true`,
   `emitDecoratorMetadata: true`, target `ES2022`, module `commonjs`.
-- [ ] 1.4 Add npm scripts: `test`, `test:watch`, `build`, `start:dev`.
+- [x] 1.4 Add npm scripts: `test`, `test:watch`, `build`, `start:dev`.
 
 **Commit**: `chore: scaffold nestjs + jest + modbus-serial project tooling`.
 
 ### 1.2 Domain types
-- [ ] 1.2 Add `src/domain/inverter-state.ts` containing:
+- [x] 1.2 Add `src/domain/inverter-state.ts` containing:
   `InverterStatus` union (1..8 per SunSpec M101.St), `InverterState`
   interface (SI base units, all fields `readonly`, includes `isStale`
   and `lastUpdatedAt`), `INVERTER_ADAPTER` DI token (`Symbol`), and
   `M101_ST` const enum mapping our status names to SunSpec numeric codes.
-- [ ] 1.3 Add a JSDoc block at the top documenting that all numeric
+- [x] 1.3 Add a JSDoc block at the top documenting that all numeric
   fields are SI base units and the type carries no `*_SF`.
 
 **Commit**: `feat(domain): add InverterState, InverterStatus, INVERTER_ADAPTER token`.
 
 ### 1.3 Scale-factor helpers
-- [ ] 1.4 Add `src/modbus/scale-factor.ts` with pure helpers:
+- [x] 1.4 Add `src/modbus/scale-factor.ts` with pure helpers:
   `chooseScaleFactor(value, maxAbs=INT16_MAX)` (clamps SF to `[-10, +10]`,
   returns 0 for `0` and `NaN`), `applyScaleFactor(value, sf)`
   (rounds + clamps to `int16` range), `encode(value)` (one-shot helper),
@@ -101,18 +113,18 @@ Flow model: GitHub Flow (each PR targets main)
 **Commit**: `feat(modbus): add scale-factor helpers with int16 overflow guard`.
 
 ### 1.4 State bus with double-buffer
-- [ ] 1.5 Add `src/state/inverter-state.service.ts` — singleton service
+- [x] 1.5 Add `src/state/inverter-state.service.ts` — singleton service
   with `publish(state)` (records `lastUpdatedAt` only when
   `!state.isStale`) and `snapshot()` (returns the published state when
   within `STALE_AFTER_MS=30000`, otherwise zeros production fields,
   sets `operatingState=OFF` and `isStale=true`, preserves
   `lifetimeEnergyKwh` + identity fields).
-- [ ] 1.6 JSDoc the stale-data policy referencing design.md §9.
+- [x] 1.6 JSDoc the stale-data policy referencing design.md §9.
 
 **Commit**: `feat(state): add InverterStateService with stale-after-30s policy`.
 
 ### 1.5 Adapter interface
-- [ ] 1.7 Add `src/gateway/inverters/inverter.adapter.ts` exporting the
+- [x] 1.7 Add `src/gateway/inverters/inverter.adapter.ts` exporting the
   abstract class `InverterAdapter` (`vendorName`, `modelName`,
   `read(): Promise<InverterState>`) and the `INVERTER_ADAPTER` injection
   token. Use abstract class (not TS interface) for NestJS DI ergonomics
@@ -121,7 +133,7 @@ Flow model: GitHub Flow (each PR targets main)
 **Commit**: `feat(gateway): add InverterAdapter abstract class + DI token`.
 
 ### 1.6 Scale-factor unit tests
-- [ ] 1.8 Add `src/modbus/scale-factor.spec.ts` — table-driven tests
+- [x] 1.8 Add `src/modbus/scale-factor.spec.ts` — table-driven tests
   covering: `0`, `230.5`, `4500`, `50000` (downgrade), `1e15` (clamps
   to `INT16_MAX` at `SF=-10`), `-100`, `NaN`; `applyScaleFactor` clamps;
   `splitAcc32` for `12345` → `{ hi: 0x3039, lo: 0x0000 }`, `0`, `2^32-1`,
@@ -130,7 +142,7 @@ Flow model: GitHub Flow (each PR targets main)
 **Commit**: `test(modbus): cover scale-factor edge cases (NaN, clamp, splitAcc32)`.
 
 ### 1.7 State-bus unit tests
-- [ ] 1.9 Add `src/state/inverter-state.service.spec.ts` — uses
+- [x] 1.9 Add `src/state/inverter-state.service.spec.ts` — uses
   `jest.useFakeTimers()` to advance `Date.now()`. Asserts: cold-start
   defaults are stale/off; fresh publish flips `isStale=false`; advancing
   past 30 s with no fresh publish yields zeroed production fields,
@@ -141,47 +153,47 @@ Flow model: GitHub Flow (each PR targets main)
 **Commit**: `test(state): cover InverterStateService stale detection`.
 
 ### 1.8 PR1 verification
-- [ ] 1.10 Run `pnpm install --frozen-lockfile` (serialport skipped via
+- [x] 1.10 Run `pnpm install --frozen-lockfile` (serialport skipped via
   `--no-optional` or `.npmrc` `optional=false`) and `pnpm test`. All
   green. No live inverter. No Modbus server bound.
 
 ### 1.9 Migrate to pnpm 11
-- [ ] 1.11 Add `"packageManager": "pnpm@11.0.0"` to `package.json`.
-- [ ] 1.12 Delete `package-lock.json`.
-- [ ] 1.13 Replace `.npmrc` with `shamefully-hoist=true`,
+- [x] 1.11 Add `"packageManager": "pnpm@11.0.0"` to `package.json`.
+- [x] 1.12 Delete `package-lock.json`.
+- [x] 1.13 Replace `.npmrc` with `shamefully-hoist=true`,
   `strict-peer-dependencies=false`, `auto-install-peers=true`.
   `shamefully-hoist=true` is required because NestJS packages transitively
   pull hoisted deps that pnpm's default isolated layout breaks.
-- [ ] 1.14 Run `pnpm install` to regenerate `pnpm-lock.yaml`.
-- [ ] 1.15 Update npm scripts: `test`, `test:watch`, `build`,
+- [x] 1.14 Run `pnpm install` to regenerate `pnpm-lock.yaml`.
+- [x] 1.15 Update npm scripts: `test`, `test:watch`, `build`,
   `start:dev` already use the right CLI invocations — keep as-is; pnpm
   runs them transparently.
 
 **Commit**: `chore(deps): migrate to pnpm 11 (packageManager field, .npmrc, pnpm-lock.yaml)`.
 
 ### 1.10 Add ESLint v9 flat config
-- [ ] 1.16 Add `eslint.config.js` with `@eslint/js` recommended +
+- [x] 1.16 Add `eslint.config.js` with `@eslint/js` recommended +
   `typescript-eslint` recommended; ignores `dist/`, `coverage/`,
   `node_modules/`; rule overrides: `no-unused-vars` (argsIgnorePattern:
   `^_`), `explicit-function-return-type: off`, `no-explicit-any: warn`.
-- [ ] 1.17 Add dev deps: `eslint`, `@eslint/js`, `typescript-eslint`.
-- [ ] 1.18 Add `lint` script: `"lint": "eslint ."`.
-- [ ] 1.19 Run `pnpm lint` — fix any issues that surface.
+- [x] 1.17 Add dev deps: `eslint`, `@eslint/js`, `typescript-eslint`.
+- [x] 1.18 Add `lint` script: `"lint": "eslint ."`.
+- [x] 1.19 Run `pnpm lint` — fix any issues that surface.
 
 **Commit**: `chore(lint): add ESLint v9 flat config with typescript-eslint`.
 
 ### 1.11 Add GitHub Actions CI
-- [ ] 1.20 Add `.github/workflows/ci.yml` triggered on `pull_request` and
+- [x] 1.20 Add `.github/workflows/ci.yml` triggered on `pull_request` and
   `push` to `main`. Steps: checkout, setup-node@20 with `cache: pnpm`,
   `corepack enable pnpm`, install via `pnpm install --frozen-lockfile`,
   `pnpm lint`, `pnpm build`, `pnpm test -- --coverage`. `runs-on:
   ubuntu-latest`, `timeout-minutes: 10`.
-- [ ] 1.21 Confirm the CI workflow runs green on this PR (Actions tab).
+- [x] 1.21 Confirm the CI workflow runs green on this PR (Actions tab).
 
 **Commit**: `ci: add GitHub Actions workflow (lint + build + test on PRs)`.
 
 ### 1.12 PR1 verification gate (updated)
-- [ ] 1.22 Run `pnpm install --frozen-lockfile && pnpm lint && pnpm test`.
+- [x] 1.22 Run `pnpm install --frozen-lockfile && pnpm lint && pnpm test`.
   All green. No live inverter. No Modbus server bound. CI mirrors this
   command via `.github/workflows/ci.yml`.
 
@@ -214,39 +226,39 @@ running Modbus server. Adapter is stubbed.
 > handler offset `0`).
 
 ### 2.1 Register constants + write helpers
-- [ ] 2.1 Add `src/modbus/sunspec-registers.ts` with the `M1` and `M101`
+- [x] 2.1 Add `src/modbus/sunspec-registers.ts` with the `M1` and `M101`
   `as const` blocks from design.md §5 (M1: ID=0, L=1, MN_START=2,
   MN_END=17, MD_START=18, MD_END=33, OPT_START=34, OPT_END=41,
   VR_START=42, VR_END=49, SN_START=50, SN_END=65, DA=66, PAD=67,
   LENGTH=68; M101: ID=70, L=71, A=72, PHVPHA=80, V_SF=83, W=84,
   W_SF=85, HZ=86, HZ_SF=87, WH_HI=94, WH_LO=95, WH_SF=96, DCW=101,
   ST=108, LENGTH=52).
-- [ ] 2.2 Add module-level constants: `SUNS_MAGIC_HI = 0x5375` ('Su'),
+- [x] 2.2 Add module-level constants: `SUNS_MAGIC_HI = 0x5375` ('Su'),
   `SUNS_MAGIC_LO = 0x6e53` ('nS'), `EOM_SENTINEL = 0xffff`,
   `HOLDING_REGISTER_COUNT = 124` (offsets 0..123).
-- [ ] 2.3 Add write helpers `writeUint16(buf, offset, value)`,
+- [x] 2.3 Add write helpers `writeUint16(buf, offset, value)`,
   `writeInt32BE(buf, offset, value)`, `writeSunSpecString(buf, offset,
   value, regCount)`. Inline-comment the BE byte order next to each helper.
 
 **Commit**: `feat(modbus): add SunSpec M1+M101 register map and write helpers`.
 
 ### 2.2 Modbus server service
-- [ ] 2.4 Add `src/modbus/sunspec-modbus-server.service.ts` —
+- [x] 2.4 Add `src/modbus/sunspec-modbus-server.service.ts` —
   `SunSpecModbusServerService` with the double-buffer pattern from
   design.md §6: `bufA`, `bufB`, `active: 'A' | 'B'`,
   `getActive()`/`getInactive()`. `refreshFromBus(state)` writes the
   inactive buffer and atomically flips `active`.
-- [ ] 2.5 Implement the `IServiceVector` handlers as Promise-returning
+- [x] 2.5 Implement the `IServiceVector` handlers as Promise-returning
   methods: `getHoldingRegister`, `getMultipleHoldingRegisters`
   (reads from `getActive()`), `setRegister`/`setRegisterArray` throw
   `'read-only'`, `getInputRegister` returns 0, `setCoil` throws,
   `getCoil` returns false.
-- [ ] 2.6 Implement `serveState(state: InverterState)` — projection
+- [x] 2.6 Implement `serveState(state: InverterState)` — projection
   from `InverterState` to register constants using scale-factor
   helpers from PR1. Writes SunS magic, M1 ID/L, M1 identity block
   (Mn/Md/SN), M101 ID/L, M101 dynamic block (A, PHVPHA, W, HZ, WH,
   DCW, ST) using the offsets from 2.1.
-- [ ] 2.7 Implement `OnApplicationBootstrap` to start
+- [x] 2.7 Implement `OnApplicationBootstrap` to start
   `new ServerTCP(vector, { host, port: 5020, unitID: 1 })`. Implement
   `OnApplicationShutdown` to close the server cleanly with a 5 s
   shutdown budget (per `devops-graceful-shutdown`).
@@ -254,7 +266,7 @@ running Modbus server. Adapter is stubbed.
 **Commit**: `feat(modbus): add SunSpecModbusServerService with double-buffer + handlers`.
 
 ### 2.3 E2E test
-- [ ] 2.8 Add `test/e2e/sunspec-modbus.e2e-spec.ts` — spawns the
+- [x] 2.8 Add `test/e2e/sunspec-modbus.e2e-spec.ts` — spawns the
   gateway with a `FakeAdapter` that publishes a known
   `InverterState`, then uses `modbus-serial` as a **client** to:
   read SunS magic at `40000–40001` (assert `0x5375`, `0x6e53`),
@@ -264,12 +276,12 @@ running Modbus server. Adapter is stubbed.
   injected `InverterState.acPowerWatts`), read M101.ST at `40108`
   (assert `M101_ST.MPPT === 4`), read M101.WH_HI/LO at `40094–40095`
   (assert decoded kWh matches injected lifetime energy).
-- [ ] 2.9 Add `jest-e2e.config.ts` and a `test:e2e` npm script.
+- [x] 2.9 Add `jest-e2e.config.ts` and a `test:e2e` npm script.
 
 **Commit**: `test(modbus): add e2e test against running SunSpecModbusServer`.
 
 ### 2.4 PR2 verification
-- [ ] 2.10 Run `pnpm test:e2e`. All green. No real inverter needed
+- [x] 2.10 Run `pnpm test:e2e`. All green. No real inverter needed
   (FakeAdapter injects the state). Server binds to localhost:5020 for
   the duration of the test only.
 
