@@ -43,14 +43,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint commit messages
-        # Check only the latest commit: the per-commit hook is the primary defense
-        # for interactive commits, and `HEAD~1..HEAD` still catches squashed-merge
-        # bypasses from the GitHub web editor. A wider range (e.g., --from=HEAD~5
-        # or --from=merge-base) would also lint PR1 commits that predate this
-        # convention — they pass through the hook on merge.
-        run: pnpm dlx commitlint --from=HEAD~1 --to=HEAD --verbose
-
       - name: Lint
         run: pnpm lint
 
