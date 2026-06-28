@@ -17,27 +17,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-        with:
-          # commitlint --from=HEAD~5 needs full history (PRs default to depth=1)
-          fetch-depth: 0
+      - uses: actions/checkout@v6
 
-      - name: Read Node version from .npmrc
-        id: node
-        run: echo "version=$(grep -E '^node-version=' .npmrc | cut -d= -f2)" >> "$GITHUB_OUTPUT"
-
-      # Install pnpm before actions/setup-node because setup-node's `cache: 'pnpm'`
-      # invokes `pnpm` to compute cache keys — if pnpm isn't on PATH yet, the step
-      # fails with "Unable to locate executable file: pnpm".
-      # Don't pass `version:` here: package.json's `packageManager: pnpm@11.0.0` is
-      # the source of truth, and pnpm/action-setup@v4 errors if both are set.
+      # Install pnpm before setup-node: setup-node's `cache: 'pnpm'` invokes
+      # `pnpm` to compute cache keys, which requires pnpm on PATH.
+      # package.json's `packageManager: pnpm@11.0.0` is the source of truth;
+      # pnpm/action-setup reads it automatically.
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: ${{ steps.node.outputs.version }}
+          node-version-file: '.nvmrc'
           cache: 'pnpm'
 
       - name: Install dependencies
