@@ -22,6 +22,8 @@ one-line config change instead of a Home Assistant rewrite.
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Running](#running)
+- [Docker](#docker)
+- [IoTech Modbus simulator](#iotech-modbus-simulator)
 - [Verifying](#verifying)
 - [Home Assistant integration](#home-assistant-integration)
 - [SunSpec model details](#sunspec-model-details)
@@ -37,6 +39,7 @@ one-line config change instead of a Home Assistant rewrite.
 - [Project layout](#project-layout)
 - [License](#license)
 - [References](#references)
+- [See also](#see-also)
 
 ## Architecture
 
@@ -182,6 +185,131 @@ Expected log lines on first boot:
 
 The poller then logs `inverter CGI http failed: ...` every 5 s if no
 inverter is reachable — that's normal offline behaviour, not a crash.
+
+## Docker
+
+A multi-stage `Dockerfile` and a `docker-compose.yml` ship with the
+repo. The image is ~227 MB and runs as a non-root `nestjs` user (uid
+1001) on `node:24-alpine`.
+
+### Quick path (Docker)
+
+```bash
+# 1. Copy .env.example → .env and set INVERTER_SN (required).
+cp .env.example .env
+
+# 2. Build the image and start the gateway.
+docker compose up -d --build gateway
+
+# 3. Verify it's up.
+curl http://localhost:3000/healthz          # {"status":"ok"}
+
+# 4. Tail the logs.
+docker compose logs -f gateway
+```
+
+The compose file maps:
+
+| Host | Container | Purpose |
+|------|-----------|---------|
+| `:5020` | `5020` | Modbus TCP — Home Assistant connects here |
+| `:3000` | `3000` | HTTP — `/healthz` liveness probe |
+
+Inside the container the gateway defaults `INVERTER_BASE_URL` to
+`http://host.docker.internal:8484`, so it can reach a Solplanet
+inverter running on the host. This works out of the box on macOS
+and Windows Docker Desktop; on Linux either:
+
+- run `docker compose run --network host gateway`, or
+- start the [IoTech simulator](#iotech-modbus-simulator) profile and
+  point the gateway at `modbus-simulator:5020` instead.
+
+### Dockerfile highlights
+
+```dockerfile
+# Stage 1: builder — node:24-alpine, pnpm@11 from packageManager,
+# full install + `pnpm build`.
+FROM node:24-alpine AS builder
+# ... pnpm install --frozen-lockfile --ignore-scripts
+# ... pnpm build
+# ... pnpm prune --prod
+
+# Stage 2: production — copy pruned node_modules + dist, non-root.
+FROM node:24-alpine AS production
+# ... adduser -S -u 1001 nestjs
+USER nestjs
+EXPOSE 3000 5020
+HEALTHCHECK CMD wget --spider http://localhost:3000/healthz || exit 1
+CMD ["node", "dist/main.js"]
+```
+
+`--ignore-scripts` skips `husky install` (which would fail because the
+build context has no `.git/`) and the optional native build of
+`serialport@13` (the gateway is TCP-only and never needs it).
+
+### Env vars (Docker)
+
+`docker-compose.yml` reads `INVERTER_SN` (and any other secrets) from
+the host `.env` file. The compose file overrides a few defaults for
+containerized use:
+
+| Variable | Container default | Why |
+|----------|-------------------|-----|
+| `INVERTER_BASE_URL` | `http://host.docker.internal:8484` | reach a host-attached inverter from inside the container |
+| `MODBUS_HOST` | `0.0.0.0` | bind all container interfaces (only mapped host ports are reachable from outside) |
+| `MODBUS_PORT` | `5020` | the canonical SunSpec/Modbus port |
+| `HTTP_PORT` | `3000` | liveness probe |
+
+Everything else comes from `.env`.
+
+### Resource limits
+
+`docker-compose.yml` caps the gateway at 256 MB RAM and 0.5 CPU — more
+than enough for the cron + Modbus server. Increase if you run a much
+larger fleet behind one container.
+
+### Tear down
+
+```bash
+docker compose down              # stop + remove containers + default network
+docker compose --profile simulator down   # also drop the simulator
+docker image rm sunspec-gateway:local     # free the build cache
+```
+
+## IoTech Modbus simulator
+
+A second compose service, `modbus-simulator`, ships a generic Modbus
+TCP server based on the IoTech `iotechsys/pymodbus-sim:1.0` image.
+It is **NOT a SunSpec simulator** — it speaks bare Modbus TCP and is
+useful only for verifying that *some* Modbus server is reachable on
+the network when you don't have the real inverter at hand. The
+gateway's M1/M101 register map will read as zeros from the simulator.
+
+It is gated behind the `--profile simulator` flag so `docker compose
+up` stays minimal:
+
+```bash
+# Start only the simulator (host port 5021 → container 5020).
+docker compose --profile simulator up -d modbus-simulator
+
+# Smoke-test with pymodbus.
+python -m venv .venv && source .venv/bin/activate
+pip install pymodbus==3.*
+python - <<'PY'
+from pymodbus.client import ModbusTcpClient
+c = ModbusTcpClient("127.0.0.1", port=5021)
+c.connect()
+print(c.read_holding_registers(0, 2).registers)   # arbitrary response
+PY
+```
+
+If you want the gateway to talk to the simulator instead of a real
+inverter, set `INVERTER_BASE_URL` to `http://modbus-simulator:5020`
+on the `gateway` service and start both with `--profile simulator`.
+The simulator's host port (`5021`) is different from the gateway's
+(`5020`) to avoid collisions.
+
+Reference: <https://docs.iotechsys.com/edge-xrt21/simulators/modbus/overview.html>.
 
 ## Verifying
 
@@ -545,3 +673,13 @@ MIT — see [LICENSE](./LICENSE).
   <https://www.home-assistant.io/integrations/sunspec/>
 - Modbus application protocol (v1.1b3):
   <https://modbus.org/docs/Modbus_Application_Protocol_V1_1b3.pdf>
+
+## See also
+
+- [IoTech Modbus simulator docs](https://docs.iotechsys.com/edge-xrt21/simulators/modbus/overview.html)
+  — generic Modbus TCP server for HA smoke-testing without the real inverter.
+- [Modbus Tools](https://www.modbustools.com/modbus.html) — `mbpoll`,
+  a handy CLI client for poking the gateway's holding registers by
+  hand from any laptop.
+- [HA SunSpec integration source](https://github.com/home-assistant/core/tree/dev/homeassistant/components/sunspec)
+  — what reads the registers this gateway exposes.
