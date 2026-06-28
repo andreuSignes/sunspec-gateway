@@ -227,32 +227,55 @@ export const M1 = {
 } as const;
 
 /**
- * SunSpec Model 101 (Single-Phase Inverter). L=52. Starts at M1.LENGTH.
- * Header: ID=101 at +0, L=52 at +1, body at +2..+51.
+ * SunSpec Model 101 (Single-Phase Inverter). L=52. Starts at absolute
+ * buffer offset 70 (= 2 [SunS magic] + 68 [Model 1, L=68] — M1 starts at
+ * offset 2 because SunS magic occupies offsets 0–1). Header: ID=101 at +0,
+ * L=52 at +1, body at +2..+51 (50 data regs).
+ *
+ * Offsets verified against github.com/sunspec/models/json/model_101.json
+ * and observation 575 (sunspec/register-map).
  */
 export const M101 = {
-  ID: 68,           // absolute offset = M1.LENGTH + 0
-  L: 69,            // absolute offset = M1.LENGTH + 1
-  A: 70,            // +2  AC current
-  APHA: 71,         // +3  Phase A current (mirror)
-  PPVPHAB: 75,      // +7  DC voltage phase AB
-  PPVPHBC: 76,      // +8  (not exposed but reserved)
-  PPVPHCA: 77,      // +9
-  PHVPHA: 78,       // +10 AC voltage phase A
-  PHVPHB: 79,       // +11
-  PHVPHC: 80,       // +12
-  V_SF: 81,         // +13 SHARED by PhV and PPV
-  W: 82,            // +14 AC power
-  W_SF: 83,         // +15
-  HZ: 84,           // +16
-  HZ_SF: 85,        // +17
-  WH_HI: 92,        // +24 hi word of acc32
-  WH_LO: 93,        // +25 lo word
-  WH_SF: 94,        // +26
-  DCW: 99,          // +31 DC power
-  TMPCAB: 101,      // +33 cabinet temp
-  ST: 106,          // +38 operating state
-  EVT1: 108,        // +40 vendor event bitfield
+  ID: 70,           // absolute offset = 2 (SunS) + 68 (M1, L=68)
+  L: 71,            // +1
+  A: 72,            // +2  AC current
+  APHA: 73,         // +3  Phase A current
+  APHB: 74,         // +4
+  APHC: 75,         // +5
+  A_SF: 76,         // +6  sunssf, shared by A/AphA/AphB/AphC
+  PPVPHAB: 77,      // +7  Phase-to-phase voltage AB (0 in single-phase)
+  PPVPHBC: 78,      // +8
+  PPVPHCA: 79,      // +9
+  PHVPHA: 80,       // +10 Phase-to-neutral voltage A
+  PHVPHB: 81,       // +11
+  PHVPHC: 82,       // +12
+  V_SF: 83,         // +13 sunssf, SHARED by PhVph* and PPVph*
+  W: 84,            // +14 AC power
+  W_SF: 85,         // +15
+  HZ: 86,           // +16 Frequency
+  HZ_SF: 87,        // +17
+  WH_HI: 94,        // +24 hi word of acc32 (lifetime energy)
+  WH_LO: 95,        // +25 lo word
+  WH_SF: 96,        // +26
+  DCA: 97,          // +27 DC current
+  DCA_SF: 98,       // +28
+  DCV: 99,          // +29 DC voltage
+  DCV_SF: 100,      // +30
+  DCW: 101,         // +31 DC power
+  DCW_SF: 102,      // +32
+  TMPCAB: 103,      // +33 cabinet temp
+  TMPSNK: 104,      // +34
+  TMPTRNS: 105,     // +35
+  TMPOT: 106,       // +36
+  TMP_SF: 107,      // +37
+  ST: 108,          // +38 operating state
+  STVND: 109,       // +39
+  EVT1: 110,        // +40 vendor event bitfield (bitfield32, 2 regs)
+  EVT2: 112,        // +42
+  EVT_VND1: 114,    // +44
+  EVT_VND2: 116,    // +46
+  EVT_VND3: 118,    // +48
+  EVT_VND4: 120,    // +50
   LENGTH: 52,
 } as const;
 
