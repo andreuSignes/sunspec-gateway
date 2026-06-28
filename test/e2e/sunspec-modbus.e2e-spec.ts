@@ -162,10 +162,10 @@ describe('SunSpecModbusServer e2e (modbus-serial client)', () => {
           useValue: {
             get: (key: string): unknown => {
               const map: Record<string, unknown> = {
-                'app.modbusHost': TEST_HOST,
-                'app.modbusPort': TEST_PORT,
-                'app.modbusUnitId': TEST_UNIT_ID,
-                'app.shutdownTimeoutMs': 2_000,
+                modbusHost: TEST_HOST,
+                modbusPort: TEST_PORT,
+                modbusUnitId: TEST_UNIT_ID,
+                shutdownTimeoutMs: 2_000,
               };
               return map[key];
             },

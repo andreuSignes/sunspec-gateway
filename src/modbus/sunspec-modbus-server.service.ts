@@ -123,7 +123,7 @@ export class SunSpecModbusServerService
     // Opt/Vr left zeroed — not used in v1.
     writeSunSpecString(target, M1.SN_START, state.serialNumber, snRegCount);
 
-    const unitId = this.config.get<number>('app.modbusUnitId') ?? 1;
+    const unitId = this.config.get<number>('modbusUnitId') ?? 1;
     writeUint16(target, M1.DA, unitId);
     writeUint16(target, M1.PAD, 0);
 
@@ -181,9 +181,9 @@ export class SunSpecModbusServerService
     this.serveState(snapshot, this.bufB);
     this.lastProjected = snapshot;
 
-    const host = this.config.get<string>('app.modbusHost') ?? '0.0.0.0';
-    const port = this.config.get<number>('app.modbusPort') ?? 5020;
-    const unitID = this.config.get<number>('app.modbusUnitId') ?? 1;
+    const host = this.config.get<string>('modbusHost') ?? '0.0.0.0';
+    const port = this.config.get<number>('modbusPort') ?? 5020;
+    const unitID = this.config.get<number>('modbusUnitId') ?? 1;
 
     const vector = this.buildServiceVector();
     this.server = new ServerTCP(vector, { host, port, unitID });
@@ -199,7 +199,7 @@ export class SunSpecModbusServerService
    */
   async onApplicationShutdown(): Promise<void> {
     if (!this.server) return;
-    const timeoutMs = this.config.get<number>('app.shutdownTimeoutMs') ?? 5_000;
+    const timeoutMs = this.config.get<number>('shutdownTimeoutMs') ?? 5_000;
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
         this.logger.warn(

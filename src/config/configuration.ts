@@ -42,9 +42,12 @@ export interface AppConfig {
  * from design.md §10. Returning the object — not a Promise — is the
  * supported shape for `load: [...]` in `ConfigModule.forRoot()`.
  *
- * `KEY` namespaces the returned object under `config.app.*` instead of
- * the default random UUID, so consumers can read typed config via
- * `getAppConfig(config)` and `validateConfig` can find the same keys.
+ * Note on namespacing: an earlier revision set `KEY = 'app'` to wrap the
+ * load result under `config.app.*`, but `@nestjs/config` v3 silently
+ * discards the load-factory namespace when `validate` is also provided —
+ * the validate return value REPLACES the merged config and is exposed
+ * flat at the top level. So we read flat keys (`config.get('modbusPort')`)
+ * everywhere and skip the namespace.
  */
 const configuration = (): AppConfig => {
   const inverterBaseUrl = process.env['INVERTER_BASE_URL'] ?? 'http://192.168.1.50:8484';
@@ -76,11 +79,6 @@ const configuration = (): AppConfig => {
   };
 };
 
-// Namespaces `configuration`'s output under `config.app.*` instead of a
-// random UUID. Without this, `config.get('app.modbusPort')` returns
-// `undefined` — see `node_modules/@nestjs/config/dist/utils/create-config-factory.util.js`.
-(configuration as unknown as { KEY: string }).KEY = 'app';
-
 export default configuration;
 
 /**
@@ -90,12 +88,13 @@ export default configuration;
  * required field is empty.
  *
  * IMPORTANT: `@nestjs/config` calls `validate(config)` BEFORE the
- * `load:` factories are merged into `ConfigService`, so at this point
- * the raw config only has `.env` + `process.env` entries (UPPERCASE
- * keys). We re-apply defaults and read the same keys the loader would
- * have used. `assignVariablesToProcess` (called by `@nestjs/config`
- * after validate) also copies the validated values into `process.env`,
- * so the loader's `process.env['INVERTER_SN']` reads see them.
+ * `load:` factories merge into `ConfigService`, so at this point the
+ * raw config only has `.env` + `process.env` entries (UPPERCASE keys).
+ * We re-apply defaults and read the same keys the loader uses. After
+ * validate returns, `assignVariablesToProcess` copies the validated
+ * values into `process.env` (lowercase keys), and the validate return
+ * value is exposed flat at the top level of `ConfigService` (no `app.`
+ * prefix — see the loader note above).
  */
 export function validateConfig(config: Record<string, unknown>): AppConfig {
   // Re-apply defaults so a missing env var still validates against the
@@ -213,22 +212,33 @@ function toInt(raw: string | undefined, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** Typed accessor — reads each key from `ConfigService` under `app.*`. */
+/**
+ * Typed accessor — reads each validated key from `ConfigService`.
+ *
+ * `validateConfig` already guarantees each key is present and the right
+ * shape at boot, so the `?? defaultValue` fallbacks are belt-and-braces
+ * for the (impossible) case where someone bypasses the module wiring.
+ */
 export function getAppConfig(config: ConfigService): AppConfig {
-  // `validateConfig` already guarantees each key is present and the right
-  // shape at boot, so a non-null assertion is safe here.
   return {
-    inverterBaseUrl: config.get<string>('app.inverterBaseUrl') as string,
-    inverterDeviceId: config.get<string>('app.inverterDeviceId') as string,
-    inverterSn: config.get<string>('app.inverterSn') as string,
-    inverterTimeoutMs: config.get<number>('app.inverterTimeoutMs') as number,
-    pollIntervalMs: config.get<number>('app.pollIntervalMs') as number,
-    pollTimeoutMs: config.get<number>('app.pollTimeoutMs') as number,
-    modbusHost: config.get<string>('app.modbusHost') as string,
-    modbusPort: config.get<number>('app.modbusPort') as number,
-    modbusUnitId: config.get<number>('app.modbusUnitId') as number,
-    staleAfterMs: config.get<number>('app.staleAfterMs') as number,
-    shutdownTimeoutMs: config.get<number>('app.shutdownTimeoutMs') as number,
-    httpPort: config.get<number>('app.httpPort') as number,
+    inverterBaseUrl:
+      (config.get<string>('inverterBaseUrl') as string) ??
+      'http://192.168.1.50:8484',
+    inverterDeviceId:
+      (config.get<string>('inverterDeviceId') as string) ?? '2',
+    inverterSn: (config.get<string>('inverterSn') as string) ?? '',
+    inverterTimeoutMs:
+      (config.get<number>('inverterTimeoutMs') as number) ?? 4000,
+    pollIntervalMs:
+      (config.get<number>('pollIntervalMs') as number) ?? 5000,
+    pollTimeoutMs:
+      (config.get<number>('pollTimeoutMs') as number) ?? 3000,
+    modbusHost: (config.get<string>('modbusHost') as string) ?? '0.0.0.0',
+    modbusPort: (config.get<number>('modbusPort') as number) ?? 5020,
+    modbusUnitId: (config.get<number>('modbusUnitId') as number) ?? 1,
+    staleAfterMs: (config.get<number>('staleAfterMs') as number) ?? 30000,
+    shutdownTimeoutMs:
+      (config.get<number>('shutdownTimeoutMs') as number) ?? 5000,
+    httpPort: (config.get<number>('httpPort') as number) ?? 3000,
   };
 }
