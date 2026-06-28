@@ -23,16 +23,19 @@ jobs:
         id: node
         run: echo "version=$(grep -E '^node-version=' .npmrc | cut -d= -f2)" >> "$GITHUB_OUTPUT"
 
+      # Install pnpm before actions/setup-node because setup-node's `cache: 'pnpm'`
+      # invokes `pnpm` to compute cache keys — if pnpm isn't on PATH yet, the step
+      # fails with "Unable to locate executable file: pnpm".
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ steps.node.outputs.version }}
           cache: 'pnpm'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
