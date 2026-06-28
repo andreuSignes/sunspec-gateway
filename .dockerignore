@@ -1,0 +1,68 @@
+# =============================================================================
+# Docker build context — exclude everything that is NOT needed to build
+# or run the gateway image. Smaller context = faster build, smaller
+# upload to the daemon, no risk of `.env` or `.git` leaking into a layer.
+# =============================================================================
+
+# Build artefacts (rebuilt inside the image)
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local config — NEVER bake `.env` into an image (it contains INVERTER_SN)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# VCS
+.git/
+.gitignore
+.gitattributes
+
+# CI config — the workflow is not needed at runtime
+.github/
+
+# OpenSpec / planning artifacts — source-of-truth lives in the repo, not
+# in the image.
+openspec/
+
+# Agent scratch / skill registry — never needed at runtime
+.atl/
+
+# Tests — the image runs the compiled gateway, not the test harness
+test/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+
+# Toolchain config not needed at runtime — only `package.json`,
+# `pnpm-lock.yaml`, `.npmrc`, `tsconfig.json`, `src/`, and `Dockerfile`
+# itself are copied by the Dockerfile.
+.husky/
+eslint.config.mjs
+commitlint.config.js
+jest.config.ts
+jest-e2e.config.ts
+.nvmrc
+
+# Documentation / project metadata — not needed at runtime
+README.md
+LICENSE
+AGENTS.md
+
+# Optional native toolchain dir (in case `npm ci` is ever used locally)
+node/
+
+# Allow the agent skill registry cache to be re-created from scratch
+# inside CI (already gitignored but listed here for safety).
+.atl/.skill-registry.cache.json

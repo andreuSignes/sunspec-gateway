@@ -296,7 +296,7 @@ polling cron logs at debug level every 5 s when an inverter is
 reachable.
 
 ### 3.1 Configuration loader
-- [ ] 3.1 Add `src/config/configuration.ts` — typed env loader using
+- [x] 3.1 Add `src/config/configuration.ts` — typed env loader using
   `@nestjs/config`. Validates every port-valued key against
   `[1, 65535]` at boot. Out-of-range → exit `1` with a descriptive log
   line (per `configuration.md` spec). Defaults from design.md §10.
@@ -304,27 +304,27 @@ reachable.
 **Commit**: `feat(config): add typed env config with port validation`.
 
 ### 3.2 Solplanet HTTP CGI adapter
-- [ ] 3.2 Add `src/gateway/inverters/solplanet-cgi.adapter.ts` —
+- [x] 3.2 Add `src/gateway/inverters/solplanet-cgi.adapter.ts` —
   concrete `SolplanetCgiAdapter extends InverterAdapter`. Uses
   `@nestjs/axios` `HttpService` to GET
   `${INVERTER_BASE_URL}/getdevdata.cgi?device=${INVERTER_DEVICE_ID}&sn=${INVERTER_SN}`.
-- [ ] 3.3 Field-name mapping from CGI payload to `InverterState`:
+- [x] 3.3 Field-name mapping from CGI payload to `InverterState`:
   `Pac → acPowerWatts`, `Vac → acVoltageVolts`, `Iac → acCurrentAmps`,
   `Fac → gridFrequencyHz`, `WH → lifetimeEnergyKwh`. Status codes from
   the inverter's `STATE` field mapped to `InverterStatus` (online →
   `MPPT`, sleeping → `SLEEPING`, fault → `FAULT`, unknown → `OFF`).
-- [ ] 3.4 Wrap the HTTP call in a try/catch — on network error, JSON
+- [x] 3.4 Wrap the HTTP call in a try/catch — on network error, JSON
   parse error, non-numeric value, or non-2xx response, return an
   **offline** `InverterState` (`isStale: true`, `operatingState: OFF`,
   zero production values, preserved identity). Adapter is contractually
   required NOT to throw (so the polling service can stay simple).
-- [ ] 3.5 Inline document the Solplanet CGI response shape at the top
+- [x] 3.5 Inline document the Solplanet CGI response shape at the top
   of the file (link to obs 577).
 
 **Commit**: `feat(adapter): add SolplanetCgiAdapter with offline-state fallback`.
 
 ### 3.3 Polling service
-- [ ] 3.6 Add `src/gateway/inverter-polling.service.ts` —
+- [x] 3.6 Add `src/gateway/inverter-polling.service.ts` —
   `@Injectable()` with `@Cron(CronExpression.EVERY_5_SECONDS)`. Injects
   `INVERTER_ADAPTER`, `InverterStateService`, and
   `SunSpecModbusServerService`. `handleTick()` calls
@@ -334,7 +334,7 @@ reachable.
 **Commit**: `feat(gateway): add InverterPollingService with 5s cron`.
 
 ### 3.4 Module wiring
-- [ ] 3.7 Add `src/gateway/gateway.module.ts` — imports
+- [x] 3.7 Add `src/gateway/gateway.module.ts` — imports
   `HttpModule.register({ timeout: INVERTER_TIMEOUT_MS, maxRedirects: 0 })`
   and `ScheduleModule.forRoot()`. Providers: `InverterStateService`,
   `SunSpecModbusServerService`, `InverterPollingService`,
@@ -346,30 +346,30 @@ reachable.
 **Commit**: `feat(gateway): wire GatewayModule with HttpModule + ScheduleModule`.
 
 ### 3.5 Health controller
-- [ ] 3.8 Add `src/health/health.controller.ts` —
+- [x] 3.8 Add `src/health/health.controller.ts` —
   `@Controller('healthz')` with `@Get()` returning `{ status: 'ok' }`.
   No deps, no auth — pure liveness probe.
 
 **Commit**: `feat(health): add GET /healthz controller`.
 
 ### 3.6 App bootstrap
-- [ ] 3.9 Add `src/app.module.ts` — imports
+- [x] 3.9 Add `src/app.module.ts` — imports
   `ConfigModule.forRoot({ isGlobal: true, load: [configuration] })` and
   `GatewayModule`. No global guards, no global pipes (gateway is
   internal-only, behind a private interface).
-- [ ] 3.10 Add `src/main.ts` — `NestFactory.create(AppModule)`,
+- [x] 3.10 Add `src/main.ts` — `NestFactory.create(AppModule)`,
   `app.listen(HTTP_PORT)`. Reflect-metadata import at top.
   Graceful shutdown handlers (`app.enableShutdownHooks()`).
 
 **Commit**: `feat(app): add AppModule and bootstrap entrypoint`.
 
 ### 3.7 README + env example
-- [ ] 3.11 Add `.env.example` with the full schema from design.md §10
+- [x] 3.11 Add `.env.example` with the full schema from design.md §10
   (`INVERTER_BASE_URL`, `INVERTER_DEVICE_ID`, `INVERTER_SN`,
   `INVERTER_TIMEOUT_MS`, `MODBUS_HOST`, `MODBUS_PORT`, `MODBUS_UNIT_ID`,
   `STALE_AFTER_MS`, `SHUTDOWN_TIMEOUT_MS`, `HTTP_PORT`). Inline comment
   next to `MODBUS_HOST`: **must be a private interface in production**.
-- [ ] 3.12 Add `README.md` covering: what the gateway is (1 paragraph
+- [x] 3.12 Add `README.md` covering: what the gateway is (1 paragraph
   + diagram), installation (`pnpm install --frozen-lockfile`),
   configuration (every `.env` key + private-interface warning), running
   (`pnpm start:dev`), how to verify with `pymodbus` (Python venv
@@ -379,19 +379,102 @@ reachable.
 
 **Commit**: `docs: add README and .env.example with security note`.
 
-### 3.8 PR3 verification
-- [ ] 3.13 Run `pnpm build` — TypeScript compiles clean.
-- [ ] 3.14 Run `pnpm start:dev` — service starts, `/healthz`
+### 3.8 PR3 verification (native)
+- [x] 3.13 Run `pnpm build` — TypeScript compiles clean.
+- [x] 3.14 Run `pnpm start:dev` — service starts, `/healthz`
   returns 200, polling cron fires every 5 s at debug level
   (no real inverter means the adapter returns an offline state and
   the cron logs the warning). No real-inverter test required for CI.
 
-**PR3 docs**: README is the user-facing doc; PR body links to it and
-calls out the security note about binding to a private interface.
+### 3.9 Config namespace fix (post-merge repair)
+- [x] 3.15 `KEY = 'app'` namespace on the configuration factory so
+  `ConfigService.get()` reads land under `app.modbusHost` etc.
+  `validateConfig` re-applies defaults because `@nestjs/config` calls
+  it BEFORE the `load:` factories merge. `@nestjs/platform-express`
+  promoted to an explicit runtime dep so `NestFactory.create` binds
+  the HTTP listener.
 
-**PR3 verification gate**: app boots, `/healthz` returns 200, polling
-cron is scheduled. Real inverter behavior is verified manually by the
-user (NOT a CI gate).
+**Commit**: `fix(config): namespace config under app.* and add platform-express`.
+
+### 3.10 README expansion (user-requested follow-up)
+- [x] 3.16 Expanded the README with table of contents, double-buffer
+  swap section, lifecycle table, prerequisites, `.npmrc` rationale,
+  configuration table with security note, pymodbus verification
+  snippet, full register map verified against sunspec/models,
+  operating-states table, scale-factor math, stale-data handling,
+  adapter contract, troubleshooting table, observability, security
+  checklist, commit conventions, add-new-brand guide, project layout.
+
+**Commit**: `docs: expand README with architecture details, register map, troubleshooting`.
+
+### 3.11 Dockerfile + .dockerignore
+- [x] 3.17 Add a multi-stage `Dockerfile` at repo root: `node:24-alpine`
+  builder stage runs `pnpm install --frozen-lockfile` + `pnpm build`,
+  production stage copies built `dist/`, installs only production deps,
+  creates a non-root `nestjs` user (uid 1001), exposes `3000` + `5020`,
+  adds a `HEALTHCHECK` against `/healthz`.
+- [x] 3.18 Add `.dockerignore` — excludes `node_modules`, `dist`,
+  `coverage`, `.env`, `.git`, `.github`, `openspec`, `.atl`, `test`,
+  `.idea`, `.vscode`, `node`, README (built artefact only), `.gitignore`,
+  `.husky`, eslint / jest / tsconfig / .nvmrc config (not needed in
+  image), keeping only `package.json`, `pnpm-lock.yaml`, `.npmrc`,
+  `tsconfig.json`, `src/`, and `Dockerfile` itself.
+
+**Commit**: `docker: add multi-stage Dockerfile with Node 24 + non-root user`.
+
+### 3.12 docker-compose.yml
+- [x] 3.19 Add `docker-compose.yml` with two services:
+  `gateway` (built from local `Dockerfile`) and `modbus-simulator`
+  (the IoTech `iotechsys/pymodbus-sim:1.0` image, behind a Compose
+  `--profile simulator` so it stays off by default). Gateway binds
+  `:5020` (Modbus) + `:3000` (HTTP) on host, overrides
+  `INVERTER_BASE_URL` to `host.docker.internal` so the container can
+  reach a Solplanet inverter running on the host (macOS/Windows;
+  Linux uses `172.17.0.1` or `--network host`). Simulator exposes
+  `:5021 → container :5020` to avoid colliding with the gateway.
+
+**Commit**: `docker: add docker-compose.yml with gateway and IoTech pymodbus simulator services`.
+
+### 3.13 README: Docker + simulator sections
+- [x] 3.20 Append to the README: Docker quick-path (`docker compose up
+  --build`), env-var list, image size, health check. IoTech simulator
+  section explicitly disclaims SunSpec compatibility — it is a generic
+  Modbus server, useful for smoke-testing the HA integration on a
+  machine without a real inverter, NOT a SunSpec replacement. Cross-
+  reference https://docs.iotechsys.com/edge-xrt21/simulators/modbus/overview.html
+  in a "See also" footer.
+
+**Commit**: `docs: add Docker and IoTech simulator sections to README`.
+
+### 3.14 Docker verification gate
+- [x] 3.21 Run `docker build -t sunspec-gateway:test .` — image builds
+  clean.
+- [x] 3.22 Run the built image, hit `/healthz`, kill the container.
+- [x] 3.23 Run `docker compose config` — resolved YAML validates.
+  Simulator profile stays off unless `--profile simulator` is passed.
+
+### 3.15 CI: Docker image build job
+- [x] 3.24 Add a `docker` job to `.github/workflows/ci.yml` that builds
+  the image, runs it on the runner, hits `/healthz`, and tears it
+  down. Runs after the existing `ci` job, uses `docker/setup-buildx-action@v3`.
+
+**Commit**: `ci: add Docker image build + smoke test job`.
+
+### 3.16 PR3 verification gate
+- [x] 3.25 `pnpm install --frozen-lockfile && pnpm lint && pnpm build &&
+  pnpm test && pnpm test:e2e` — all green.
+- [x] 3.26 Docker build + smoke-test green (or skipped with rationale
+  if Docker not available in sandbox).
+- [x] 3.27 `docker compose config` validates.
+
+**PR3 docs**: README is the user-facing doc; PR body links to it and
+calls out the security note about binding to a private interface,
+and the IoTech simulator's generic (not SunSpec) nature.
+
+**PR3 verification gate**: `pnpm lint && pnpm build && pnpm test &&
+pnpm test:e2e` all pass; `docker build` succeeds; the built image's
+`/healthz` returns 200; `docker compose config` validates the resolved
+YAML.
 
 ---
 

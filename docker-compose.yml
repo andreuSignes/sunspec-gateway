@@ -1,0 +1,101 @@
+# =============================================================================
+# SunSpec Modbus Gateway — local development + smoke-test stack
+# =============================================================================
+#
+# Two services:
+#   - `gateway`        : the SunSpec Modbus TCP gateway (built from
+#                        ./Dockerfile). Default profile — starts with
+#                        `docker compose up`.
+#   - `modbus-simulator`: the IoTech pymodbus simulator
+#                        (iotechsys/pymodbus-sim:1.0) — a GENERIC Modbus
+#                        TCP server, NOT a SunSpec simulator. Useful only
+#                        for verifying that *some* Modbus TCP server is
+#                        reachable on the host network. Started only when
+#                        `--profile simulator` is passed.
+#
+# Why the simulator is behind a profile: it binds to host port 5021 to
+# avoid colliding with the gateway's port 5020. Profiles keep it out of
+# the default path so `docker compose up` stays minimal.
+#
+# Network note: the gateway defaults to `INVERTER_BASE_URL=http://host.docker.internal:8484`
+# via the `extra_hosts` mapping below. That works on macOS and Windows
+# Docker Desktop out of the box. On Linux, `host.docker.internal` is not
+# mapped automatically — either:
+#   - run `docker compose --profile simulator up` and point the
+#     gateway at the simulator instead (use `modbus-simulator:5020`),
+#   - or use `--network host` (Linux only): `docker compose run --network
+#     host gateway`.
+# =============================================================================
+
+name: sunspec-gateway
+
+services:
+  # ---------------------------------------------------------------------------
+  # gateway — built from the local Dockerfile. Default service.
+  # ---------------------------------------------------------------------------
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sunspec-gateway:local
+    container_name: sunspec-gateway
+    restart: unless-stopped
+
+    # Read INVERTER_SN (and other secrets) from the host .env file.
+    # `.env` is gitignored — never commit it.
+    env_file:
+      - .env
+
+    environment:
+      # Override defaults for containerized use:
+      INVERTER_BASE_URL: ${INVERTER_BASE_URL:-http://host.docker.internal:8484}
+      # Bind Modbus TCP on every interface inside the container —
+      # port-mapping below exposes only the host ports we want.
+      MODBUS_HOST: 0.0.0.0
+      MODBUS_PORT: "5020"
+      HTTP_PORT: "3000"
+
+    # `extra_hosts` makes the magic hostname `host.docker.internal`
+    # resolve to the host's gateway IP — needed on Linux too, where
+    # Docker does not auto-map it. On macOS / Windows Docker Desktop
+    # this is a no-op (already mapped).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    ports:
+      # Modbus TCP — Home Assistant connects here.
+      - "5020:5020"
+      # HTTP — only the `/healthz` liveness probe is exposed.
+      - "3000:3000"
+
+    healthcheck:
+      # Re-use the in-container wget for symmetry with the Dockerfile's
+      # HEALTHCHECK. Fails after 3 retries so a crashed process is
+      # detected quickly.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    # Resource cap so a runaway cron doesn't OOM the host. 256 MB is
+    # plenty for this gateway (state bus + Modbus server + 5 s cron).
+    mem_limit: 256m
+    cpus: 0.5
+
+  # ---------------------------------------------------------------------------
+  # modbus-simulator — IoTech pymodbus simulator. NOT SunSpec — generic
+  # Modbus server only. Useful for HA smoke-testing without the real
+  # hardware. Started only with `--profile simulator`.
+  # ---------------------------------------------------------------------------
+  modbus-simulator:
+    image: iotechsys/pymodbus-sim:1.0
+    container_name: pymodbus-sim
+    profiles: ["simulator"]
+    restart: unless-stopped
+    ports:
+      # Map host 5021 → container 5020 to avoid colliding with the
+      # gateway's 5020 binding.
+      - "5021:5020"
+    mem_limit: 128m
+    cpus: 0.25
