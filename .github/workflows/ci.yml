@@ -26,10 +26,10 @@ jobs:
       # Install pnpm before actions/setup-node because setup-node's `cache: 'pnpm'`
       # invokes `pnpm` to compute cache keys — if pnpm isn't on PATH yet, the step
       # fails with "Unable to locate executable file: pnpm".
+      # Don't pass `version:` here: package.json's `packageManager: pnpm@11.0.0` is
+      # the source of truth, and pnpm/action-setup@v4 errors if both are set.
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 11
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
