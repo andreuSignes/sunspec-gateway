@@ -32,3 +32,6 @@ pnpm-debug.log*
 
 # OpenSpec scratch (planning lives here; tracked content is in changes/)
 openspec/.scratch/
+
+# Regenerated skill registry cache
+.atl/.skill-registry.cache.json
