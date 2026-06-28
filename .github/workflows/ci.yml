@@ -18,6 +18,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          # commitlint --from=HEAD~5 needs full history (PRs default to depth=1)
+          fetch-depth: 0
 
       - name: Read Node version from .npmrc
         id: node
