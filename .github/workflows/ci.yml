@@ -37,6 +37,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Lint commit messages
+        run: |
+          pnpm dlx commitlint --from=HEAD~5 --to=HEAD --verbose
+
       - name: Lint
         run: pnpm lint
 
