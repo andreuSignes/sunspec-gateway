@@ -1,2 +1,5 @@
 allowBuilds:
   '@nestjs/core': false
+  '@serialport/bindings-cpp': false
+verify-deps-before-run: false
+verifyDepsBeforeRun: false
