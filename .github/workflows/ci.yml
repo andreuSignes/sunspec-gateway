@@ -66,7 +66,12 @@ jobs:
         run: docker build -t sunspec-gateway:test .
 
       - name: Validate compose stack
-        run: docker compose config --quiet
+        run: |
+          # CI doesn't have a populated .env file. docker compose still
+          # validates the stack YAML without one if we touch an empty
+          # stub first.
+          touch .env
+          docker compose config --quiet
 
       - name: Smoke-test the built image
         env:
