@@ -52,8 +52,7 @@ describe('InverterStateService', () => {
     it('marks state stale after 30s without a fresh poll', () => {
       service.setState(fresh({ acPowerWatts: 1500, isStale: false }));
       jest.advanceTimersByTime(31_000);
-      service.setState(fresh({ acPowerWatts: 1500, isStale: false }));
-      // After triggering setState past the threshold, current should be offline
+      // No second setState — the bus has not been polled for 31 s.
       const current = service.getState();
       expect(current.status).toBe('offline');
       expect(current.acPowerWatts).toBe(0);

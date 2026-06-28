@@ -66,9 +66,10 @@ describe('scale-factor', () => {
     it('clamps negative input to 0', () => {
       expect(splitAcc32(-1)).toEqual([0, 0]);
     });
-    it('clamps values above 0xFFFFFFFF', () => {
+    it('clamps values above 0xFFFFFFFF to max-uint32 word pair', () => {
       const [hi, lo] = splitAcc32(0x1_0000_0000);
-      expect((hi << 16) | lo).toBe(0xffff_ffff);
+      expect(hi).toBe(0xffff);
+      expect(lo).toBe(0xffff);
     });
   });
 });
